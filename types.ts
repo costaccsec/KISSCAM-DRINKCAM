@@ -9,6 +9,8 @@ export type LayoutMode = 'split' | 'full_cam1' | 'full_cam2';
 
 export type AppMode = 'KISS' | 'DRINK';
 
+export type Language = 'TH' | 'EN';
+
 export interface BroadcastMessage {
   type: 'FRAME' | 'STATUS' | 'COMMAND';
   source: Role;

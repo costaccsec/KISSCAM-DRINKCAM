@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Grid, Sparkles, AlertCircle, Wifi } from 'lucide-react';
-import { Role, GeminiCommentary, LayoutMode, AppMode } from '../types';
+import { Grid, Sparkles, AlertCircle, Wifi, Globe } from 'lucide-react';
+import { Role, GeminiCommentary, LayoutMode, AppMode, Language } from '../types';
 import CamOverlay from './HeartOverlay';
 import { analyzeFrame } from '../services/geminiService';
 import Peer, { MediaConnection, DataConnection } from 'peerjs';
@@ -17,6 +17,7 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
   const [activeLayout, setActiveLayout] = useState<LayoutMode>('split');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [commentary, setCommentary] = useState<GeminiCommentary | null>(null);
+  const [language, setLanguage] = useState<Language>('TH'); // Default to Thai
   
   const peerRef = useRef<Peer | null>(null);
   const cam1VideoRef = useRef<HTMLVideoElement>(null);
@@ -118,7 +119,7 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
       const base64Image = canvas.toDataURL('image/jpeg', 0.8);
       
       try {
-        const result = await analyzeFrame(base64Image, mode);
+        const result = await analyzeFrame(base64Image, mode, language);
         setCommentary(result);
         setTimeout(() => setCommentary(null), 8000);
       } catch (e) {
@@ -214,13 +215,29 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
         </div>
 
         <div className="flex gap-4 items-center">
-           <div className="flex gap-2 mr-4">
+           <div className="flex gap-2 mr-2">
              <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border ${cam1Stream ? 'bg-green-900/30 border-green-500/50 text-green-400' : 'bg-red-900/30 border-red-500/50 text-red-400'}`}>
                 <Wifi size={12} /> <span className="hidden md:inline">CAM 1</span>
              </div>
              <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border ${cam2Stream ? 'bg-green-900/30 border-green-500/50 text-green-400' : 'bg-red-900/30 border-red-500/50 text-red-400'}`}>
                 <Wifi size={12} /> <span className="hidden md:inline">CAM 2</span>
              </div>
+           </div>
+
+           {/* Language Switcher */}
+           <div className="flex items-center bg-gray-800 rounded-full p-1 border border-gray-700">
+             <button
+               onClick={() => setLanguage('TH')}
+               className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${language === 'TH' ? 'bg-white text-black shadow-md' : 'text-gray-400 hover:text-white'}`}
+             >
+               TH
+             </button>
+             <button
+               onClick={() => setLanguage('EN')}
+               className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${language === 'EN' ? 'bg-white text-black shadow-md' : 'text-gray-400 hover:text-white'}`}
+             >
+               EN
+             </button>
            </div>
 
            <button
@@ -231,7 +248,7 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
              <Sparkles size={20} className={isKiss ? 'fill-pink-600' : 'fill-amber-600'} />
              <span className="hidden md:inline">{isAnalyzing ? "JUDGING..." : "AI JUDGE"}</span>
            </button>
-           <button onClick={onLeave} className="text-gray-600 hover:text-white font-mono text-sm ml-4">EXIT</button>
+           <button onClick={onLeave} className="text-gray-600 hover:text-white font-mono text-sm ml-2">EXIT</button>
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { GeminiCommentary, AppMode } from '../types';
+import { GeminiCommentary, AppMode, Language } from '../types';
 
 const getAiClient = () => {
   // Use process.env.API_KEY as per Google GenAI SDK guidelines
@@ -11,24 +11,48 @@ const getAiClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
-export const analyzeFrame = async (base64Image: string, mode: AppMode): Promise<GeminiCommentary | null> => {
+export const analyzeFrame = async (base64Image: string, mode: AppMode, language: Language): Promise<GeminiCommentary | null> => {
   const ai = getAiClient();
   if (!ai) return null;
 
   // Remove data URL prefix if present for the API call
   const cleanBase64 = base64Image.split(',')[1] || base64Image;
 
-  const systemPrompt = mode === 'KISS' 
-    ? `You are a hype announcer for a Stadium Kiss Cam. Analyze the image.
+  let systemPrompt = "";
+
+  if (language === 'TH') {
+    if (mode === 'KISS') {
+      systemPrompt = `คุณคือนักพากย์ในสนามกีฬา (Kiss Cam Announcer) หน้าที่ของคุณคือดูรูปนี้ 
+       ถ้าเขาจูบกันให้เชียร์สุดใจ! 
+       ถ้าเขาเขินให้แซว! 
+       ถ้ามาคนเดียวให้เล่นมุขตลก แล้วให้คะแนนความหวานมาด้วย
+       Moods: romantic, funny, hype, awkward.
+       IMPORTANT: The 'text' field in the JSON response MUST be in Thai Language.`;
+    } else {
+      systemPrompt = `คุณคือพิธีกรงานปาร์ตี้ (Drink Cam Announcer) ดูรูปนี้ว่าเขากำลังดื่มมั้ย? 
+       ถ้าชนแก้วให้ตะโกน Cheers! 
+       ถ้าแก้วว่างให้บอกไปเติม แล้วให้คะแนนความเมา/ความสนุกมา
+       Moods: party, funny, hype, spilled.
+       IMPORTANT: The 'text' field in the JSON response MUST be in Thai Language.`;
+    }
+  } else {
+    // English Prompts
+    if (mode === 'KISS') {
+      systemPrompt = `You are a hype announcer for a Stadium Kiss Cam. Analyze the image.
        If people are kissing, celebrate wildly! 
        If they are shy, encourage them. 
        If it's just one person, make a funny observation.
-       Moods: romantic, funny, hype, awkward.`
-    : `You are a hype announcer for a Stadium Drink Cam (Party Cam). Analyze the image.
+       Moods: romantic, funny, hype, awkward.
+       IMPORTANT: The 'text' field in the JSON response MUST be in English.`;
+    } else {
+      systemPrompt = `You are a hype announcer for a Stadium Drink Cam (Party Cam). Analyze the image.
        If people are drinking or toasting, celebrate wildly! "CHEERS!", "BOTTOMS UP!"
        If they are just holding drinks, hype them up.
        If they are not drinking, roast them gently to get a drink.
-       Moods: party, funny, hype, spilled.`;
+       Moods: party, funny, hype, spilled.
+       IMPORTANT: The 'text' field in the JSON response MUST be in English.`;
+    }
+  }
 
   const validMoods = mode === 'KISS' 
     ? ['romantic', 'funny', 'hype', 'awkward']
@@ -56,7 +80,7 @@ export const analyzeFrame = async (base64Image: string, mode: AppMode): Promise<
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            text: { type: Type.STRING, description: "Short, punchy announcer commentary (max 15 words)" },
+            text: { type: Type.STRING, description: `Short, punchy announcer commentary (max 15 words) in ${language === 'TH' ? 'Thai' : 'English'}` },
             mood: { type: Type.STRING, enum: validMoods },
             score: { type: Type.NUMBER, description: mode === 'KISS' ? "Kiss Score 0-100" : "Party Score 0-100" }
           },
@@ -73,7 +97,7 @@ export const analyzeFrame = async (base64Image: string, mode: AppMode): Promise<
   } catch (error) {
     console.error("Gemini analysis failed:", error);
     return {
-      text: "Technical difficulties! But the party goes on!",
+      text: language === 'TH' ? "ระบบขัดข้อง! แต่ปาร์ตี้ต้องไปต่อ!" : "Technical difficulties! But the party goes on!",
       mood: "funny",
       score: 0
     };
