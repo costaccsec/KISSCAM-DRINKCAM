@@ -21,13 +21,20 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
   const peerRef = useRef<Peer | null>(null);
   const cam1VideoRef = useRef<HTMLVideoElement>(null);
   const cam2VideoRef = useRef<HTMLVideoElement>(null);
-  
-  // Keep track of connections to send status updates
   const connectionsRef = useRef<DataConnection[]>([]);
+  const modeRef = useRef(mode);
+
+  // Update ref when prop changes to access current mode in callbacks without re-running effects
+  useEffect(() => {
+    modeRef.current = mode;
+    // Sync to connected peers
+    connectionsRef.current.forEach(conn => {
+        if (conn.open) conn.send({ type: 'STATUS', mode });
+    });
+  }, [mode]);
 
   // Initialize PeerJS Host
   useEffect(() => {
-    // ID format: lovelens-[ROOM_ID]-host
     const peerId = `lovelens-${roomId}-host`;
     const peer = new Peer(peerId);
     peerRef.current = peer;
@@ -36,10 +43,9 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
       console.log('Host Peer ID:', id);
     });
 
-    // Handle Incoming Video Calls
     peer.on('call', (call: MediaConnection) => {
       console.log("Incoming call from:", call.peer);
-      call.answer(); // Answer without stream (Host is receive-only for video)
+      call.answer(); 
 
       const callerRole = call.peer.includes('cam1') ? Role.CAM_1 : (call.peer.includes('cam2') ? Role.CAM_2 : null);
 
@@ -59,13 +65,11 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
       });
     });
 
-    // Handle Incoming Data Commands (Remote Controls)
     peer.on('connection', (conn: DataConnection) => {
       connectionsRef.current.push(conn);
       
-      // Send initial mode to the connected camera
       conn.on('open', () => {
-        conn.send({ type: 'STATUS', mode });
+        conn.send({ type: 'STATUS', mode: modeRef.current });
       });
 
       conn.on('data', (data: any) => {
@@ -81,17 +85,9 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
 
     return () => {
       peer.destroy();
+      connectionsRef.current = [];
     };
-  }, [roomId, mode]);
-
-  // Sync Mode changes to connected cameras
-  useEffect(() => {
-    connectionsRef.current.forEach(conn => {
-      if (conn.open) {
-        conn.send({ type: 'STATUS', mode });
-      }
-    });
-  }, [mode]);
+  }, [roomId]); // Removed 'mode' dependency to prevent reconnection loop
 
   const handleAIReaction = async () => {
     let videoElement = null;
@@ -124,8 +120,6 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
       try {
         const result = await analyzeFrame(base64Image, mode);
         setCommentary(result);
-        
-        // Auto-clear commentary after 8 seconds
         setTimeout(() => setCommentary(null), 8000);
       } catch (e) {
         console.error(e);
@@ -149,7 +143,7 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
     const bgClass = colors[commentary.mood] || 'bg-gray-600';
 
     return (
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 animate-bounce-in w-full max-w-3xl px-4">
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 animate-bounce-in w-full max-w-3xl px-4 pointer-events-none">
          <div className={`transform ${bgClass} text-white p-8 rounded-[3rem] shadow-2xl border-8 border-white text-center relative overflow-hidden`}>
             {/* Glossy overlay */}
             <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent pointer-events-none"></div>
@@ -170,7 +164,6 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
     );
   };
 
-  // Theme Styles
   const isKiss = mode === 'KISS';
   const accentColor = isKiss ? 'bg-pink-600' : 'bg-amber-600';
   const borderColor = isKiss ? 'border-pink-500' : 'border-amber-500';
@@ -179,12 +172,12 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
 
   return (
     <div className="h-screen bg-gray-900 flex flex-col overflow-hidden relative">
-      {/* Hidden Video Elements for Logic */}
+      {/* Hidden Video Elements for Logic Capture */}
       <video ref={cam1VideoRef} autoPlay playsInline muted className="hidden" />
       <video ref={cam2VideoRef} autoPlay playsInline muted className="hidden" />
 
       {/* Top Control Bar */}
-      <div className="h-20 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-8 z-40">
+      <div className="h-20 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-8 z-40 shrink-0">
         <div className="flex items-center gap-6">
           <div>
             <div className="text-xs text-gray-500 font-mono mb-1 uppercase tracking-widest">Room Code</div>
@@ -193,7 +186,7 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
             </div>
           </div>
           <div className="h-10 w-px bg-gray-800 mx-2"></div>
-          <h1 className={`${titleColor} font-black text-3xl tracking-tighter`}>
+          <h1 className={`${titleColor} font-black text-3xl tracking-tighter hidden md:block`}>
             {isKiss ? "LOVELENS HOST" : "DRINKLENS HOST"}
           </h1>
         </div>
@@ -223,85 +216,76 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
         <div className="flex gap-4 items-center">
            <div className="flex gap-2 mr-4">
              <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border ${cam1Stream ? 'bg-green-900/30 border-green-500/50 text-green-400' : 'bg-red-900/30 border-red-500/50 text-red-400'}`}>
-                <Wifi size={12} /> CAM 1
+                <Wifi size={12} /> <span className="hidden md:inline">CAM 1</span>
              </div>
              <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border ${cam2Stream ? 'bg-green-900/30 border-green-500/50 text-green-400' : 'bg-red-900/30 border-red-500/50 text-red-400'}`}>
-                <Wifi size={12} /> CAM 2
+                <Wifi size={12} /> <span className="hidden md:inline">CAM 2</span>
              </div>
            </div>
 
            <button
              onClick={handleAIReaction}
              disabled={isAnalyzing || (!cam1Stream && !cam2Stream)}
-             className={`${isKiss ? 'bg-white text-pink-600 hover:bg-pink-50' : 'bg-white text-amber-600 hover:bg-amber-50'} disabled:opacity-50 disabled:cursor-not-allowed px-6 py-3 rounded-full font-black flex items-center gap-2 transition-all transform active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.3)]`}
+             className={`${isKiss ? 'bg-white text-pink-600 hover:bg-pink-50' : 'bg-white text-amber-600 hover:bg-amber-50'} disabled:opacity-50 disabled:cursor-not-allowed px-4 md:px-6 py-2 md:py-3 rounded-full font-black flex items-center gap-2 transition-all transform active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.3)]`}
            >
              <Sparkles size={20} className={isKiss ? 'fill-pink-600' : 'fill-amber-600'} />
-             {isAnalyzing ? "JUDGING..." : "AI JUDGE"}
+             <span className="hidden md:inline">{isAnalyzing ? "JUDGING..." : "AI JUDGE"}</span>
            </button>
            <button onClick={onLeave} className="text-gray-600 hover:text-white font-mono text-sm ml-4">EXIT</button>
         </div>
       </div>
 
       {/* Main Display Area */}
-      <div className="flex-1 relative bg-black p-4 md:p-8">
+      <div className="flex-1 relative bg-black p-4 flex items-center justify-center overflow-hidden">
          <CommentaryBox />
          
          {activeLayout === 'split' && (
-           <div className="grid grid-cols-2 gap-4 md:gap-8 h-full">
+           <div className="flex items-center justify-center gap-4 md:gap-8 w-full h-full">
              {/* Feed 1 */}
-             <div className={`relative rounded-3xl overflow-hidden bg-gray-800 border-4 ${borderColor} transition-all duration-500`} style={{boxShadow: `0 0 30px ${glowColor}`}}>
+             <div className={`relative aspect-video w-full max-w-[50%] max-h-full rounded-3xl overflow-hidden bg-gray-800 border-4 ${borderColor} transition-all duration-500 shadow-2xl`} style={{boxShadow: `0 0 30px ${glowColor}`}}>
                {cam1Stream ? (
                  <VideoFeed stream={cam1Stream} />
                ) : (
-                 <div className="flex flex-col items-center justify-center h-full text-gray-600 gap-4 animate-pulse">
-                   <div className="w-20 h-20 rounded-full bg-gray-700 flex items-center justify-center">
-                     <AlertCircle size={40} />
-                   </div>
-                   <p className="font-mono tracking-widest">WAITING FOR CAM 1</p>
-                 </div>
+                 <WaitingState label="WAITING FOR CAM 1" />
                )}
-               <div className={`absolute top-6 left-6 ${accentColor} text-white px-4 py-2 rounded-full text-lg font-bold shadow-lg z-20`}>CAM 1</div>
+               <div className={`absolute top-4 left-4 ${accentColor} text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg z-20`}>CAM 1</div>
+               <CamOverlay mode={mode} active={true} />
              </div>
 
              {/* Feed 2 */}
-             <div className={`relative rounded-3xl overflow-hidden bg-gray-800 border-4 ${borderColor} transition-all duration-500`} style={{boxShadow: `0 0 30px ${glowColor}`}}>
+             <div className={`relative aspect-video w-full max-w-[50%] max-h-full rounded-3xl overflow-hidden bg-gray-800 border-4 ${borderColor} transition-all duration-500 shadow-2xl`} style={{boxShadow: `0 0 30px ${glowColor}`}}>
                {cam2Stream ? (
                  <VideoFeed stream={cam2Stream} />
                ) : (
-                 <div className="flex flex-col items-center justify-center h-full text-gray-600 gap-4 animate-pulse">
-                   <div className="w-20 h-20 rounded-full bg-gray-700 flex items-center justify-center">
-                     <AlertCircle size={40} />
-                   </div>
-                   <p className="font-mono tracking-widest">WAITING FOR CAM 2</p>
-                 </div>
+                 <WaitingState label="WAITING FOR CAM 2" />
                )}
-               <div className={`absolute top-6 left-6 ${accentColor} text-white px-4 py-2 rounded-full text-lg font-bold shadow-lg z-20`}>CAM 2</div>
+               <div className={`absolute top-4 left-4 ${accentColor} text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg z-20`}>CAM 2</div>
+               <CamOverlay mode={mode} active={true} />
              </div>
-
-             {/* Unified Overlay */}
-             <CamOverlay label={isKiss ? "DOUBLE TROUBLE" : "DOUBLE SHOTS"} mode={mode} />
            </div>
          )}
 
          {activeLayout === 'full_cam1' && (
-            <div className={`relative w-full h-full rounded-3xl overflow-hidden bg-gray-800 border-4 ${borderColor}`} style={{boxShadow: `0 0 50px ${glowColor}`}}>
+            <div className={`relative aspect-video w-full max-h-full rounded-3xl overflow-hidden bg-gray-800 border-4 ${borderColor} shadow-2xl`} style={{boxShadow: `0 0 60px ${glowColor}`}}>
                {cam1Stream ? (
                  <VideoFeed stream={cam1Stream} />
                ) : (
-                  <div className="flex items-center justify-center h-full text-gray-500">Connecting to Cam 1...</div>
+                  <WaitingState label="CONNECTING TO CAM 1..." />
                )}
-               <CamOverlay mode={mode} />
+               <div className={`absolute top-6 left-6 ${accentColor} text-white px-4 py-2 rounded-full text-lg font-bold shadow-lg z-20`}>CAM 1 (LIVE)</div>
+               <CamOverlay mode={mode} active={true} />
             </div>
          )}
 
          {activeLayout === 'full_cam2' && (
-            <div className={`relative w-full h-full rounded-3xl overflow-hidden bg-gray-800 border-4 ${borderColor}`} style={{boxShadow: `0 0 50px ${glowColor}`}}>
+            <div className={`relative aspect-video w-full max-h-full rounded-3xl overflow-hidden bg-gray-800 border-4 ${borderColor} shadow-2xl`} style={{boxShadow: `0 0 60px ${glowColor}`}}>
                {cam2Stream ? (
                  <VideoFeed stream={cam2Stream} />
                ) : (
-                  <div className="flex items-center justify-center h-full text-gray-500">Connecting to Cam 2...</div>
+                  <WaitingState label="CONNECTING TO CAM 2..." />
                )}
-               <CamOverlay mode={mode} />
+               <div className={`absolute top-6 left-6 ${accentColor} text-white px-4 py-2 rounded-full text-lg font-bold shadow-lg z-20`}>CAM 2 (LIVE)</div>
+               <CamOverlay mode={mode} active={true} />
             </div>
          )}
       </div>
@@ -317,7 +301,17 @@ const VideoFeed = ({ stream }: { stream: MediaStream }) => {
       videoRef.current.srcObject = stream;
     }
   }, [stream]);
+  // Use object-cover to fill the 16:9 container, simulating broadcast crop
   return <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />;
 };
+
+const WaitingState = ({ label }: { label: string }) => (
+  <div className="flex flex-col items-center justify-center h-full text-gray-600 gap-4 animate-pulse bg-gray-900">
+     <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center">
+       <AlertCircle size={32} />
+     </div>
+     <p className="font-mono tracking-widest text-sm md:text-base text-center px-4">{label}</p>
+  </div>
+);
 
 export default HostDisplay;
