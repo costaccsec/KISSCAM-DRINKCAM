@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Grid, Sparkles, AlertCircle, Wifi, Globe } from 'lucide-react';
+import { Grid, Sparkles, AlertCircle, Wifi } from 'lucide-react';
 import { Role, GeminiCommentary, LayoutMode, AppMode, Language } from '../types';
 import CamOverlay from './HeartOverlay';
 import { analyzeFrame } from '../services/geminiService';
