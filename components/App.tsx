@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Role, AppMode } from './types';
 import HostDisplay from './components/HostDisplay';
 import MobileCamera from './components/MobileCamera';
