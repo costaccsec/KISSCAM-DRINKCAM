@@ -1,0 +1,8 @@
+{
+  "name": "LoveLens: AI Kiss Cam",
+  "description": "A multi-device Kiss Cam experience using one host (projector) and two roaming mobile cameras. Features real-time local streaming simulation and AI commentary powered by Gemini.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
