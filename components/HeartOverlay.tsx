@@ -1,5 +1,5 @@
 import React from 'react';
-import { Heart, Beer, Sparkles, GlassWater } from 'lucide-react';
+import { Heart, Beer, Sparkles } from 'lucide-react';
 import { AppMode } from '../types';
 
 interface CamOverlayProps {
