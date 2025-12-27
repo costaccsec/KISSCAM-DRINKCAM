@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { RefreshCw, Wifi, WifiOff, Layout, Smartphone, LogOut } from 'lucide-react';
 import { Role, LayoutMode, AppMode } from '../types';
@@ -20,40 +21,26 @@ const MobileCamera: React.FC<MobileCameraProps> = ({ role, mode: initialMode, on
   
   const peerRef = useRef<Peer | null>(null);
   const connRef = useRef<DataConnection | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  // Initialize PeerJS Client
-  useEffect(() => {
-    const peerId = `lovelens-${roomId}-${role === Role.CAM_1 ? 'cam1' : 'cam2'}`;
-    const hostId = `lovelens-${roomId}-host`;
+  const connectToHost = useCallback((peer: Peer, hostId: string) => {
+    console.log("Attempting to connect to host:", hostId);
     
-    const peer = new Peer(peerId);
-    peerRef.current = peer;
-
-    peer.on('open', () => {
-      console.log('My Peer ID:', peerId);
-      connectToHost(peer, hostId);
+    // 1. Data connection for layout control
+    const conn = peer.connect(hostId, {
+      reliable: true
     });
-
-    peer.on('error', (err) => {
-      console.error(err);
-      setIsConnected(false);
-      // Retry connection if ID is taken (maybe refresh?) or just alert
-    });
-
-    return () => {
-      peer.destroy();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, role]);
-
-  const connectToHost = (peer: Peer, hostId: string) => {
-    // 1. Open Data Connection for commands
-    const conn = peer.connect(hostId);
     
     conn.on('open', () => {
       console.log("Connected to Host Control");
       setIsConnected(true);
       connRef.current = conn;
+      
+      // If we already have a stream, call the host immediately on connection
+      if (streamRef.current) {
+        console.log("Stream ready, calling host...");
+        peer.call(hostId, streamRef.current);
+      }
     });
 
     conn.on('data', (data: any) => {
@@ -63,20 +50,39 @@ const MobileCamera: React.FC<MobileCameraProps> = ({ role, mode: initialMode, on
     });
 
     conn.on('close', () => setIsConnected(false));
-    conn.on('error', () => setIsConnected(false));
-
-    // 2. Initiate Video Call if stream exists
-    if (stream) {
-      callHost(peer, hostId, stream);
-    }
-  };
-
-  const callHost = (peer: Peer, hostId: string, streamToCall: MediaStream) => {
-    const call = peer.call(hostId, streamToCall);
-    call.on('close', () => {
-      console.log("Call ended");
+    conn.on('error', (err) => {
+      console.error("Connection error:", err);
+      setIsConnected(false);
     });
-  };
+  }, []);
+
+  useEffect(() => {
+    // Generate a unique ID to avoid collisions
+    // We add a short random suffix to handle quick refreshes
+    const randomSuffix = Math.floor(Math.random() * 1000);
+    const peerId = `lovelens-${roomId}-${role === Role.CAM_1 ? 'cam1' : 'cam2'}-${randomSuffix}`;
+    const hostId = `lovelens-${roomId}-host`;
+    
+    const peer = new Peer(peerId);
+    peerRef.current = peer;
+
+    peer.on('open', () => {
+      console.log('My Unique Peer ID:', peerId);
+      connectToHost(peer, hostId);
+    });
+
+    peer.on('error', (err) => {
+      console.error("PeerJS Error:", err);
+      if (err.type === 'peer-unavailable') {
+        console.warn("Host not found, retrying in 3s...");
+        setTimeout(() => connectToHost(peer, hostId), 3000);
+      }
+    });
+
+    return () => {
+      peer.destroy();
+    };
+  }, [roomId, role, connectToHost]);
 
   const startCamera = useCallback(async () => {
     if (stream) {
@@ -89,31 +95,29 @@ const MobileCamera: React.FC<MobileCameraProps> = ({ role, mode: initialMode, on
           width: { ideal: 1280 },
           height: { ideal: 720 }
         },
-        audio: false // Host usually doesn't need audio for kiss cam, prevents feedback loop
+        audio: false
       });
       setStream(newStream);
+      streamRef.current = newStream;
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
       }
       
-      // If peer is ready, call host
-      if (peerRef.current && !peerRef.current.disconnected) {
+      // If peer is already open and connected, initiate the call
+      if (peerRef.current && isConnected) {
         const hostId = `lovelens-${roomId}-host`;
-        callHost(peerRef.current, hostId, newStream);
+        peerRef.current.call(hostId, newStream);
       }
 
     } catch (err) {
       console.error("Error accessing camera:", err);
-      alert("Could not access camera. Please allow permissions.");
     }
-  }, [facingMode, roomId]);
+  }, [facingMode, roomId, isConnected, stream]);
 
   useEffect(() => {
     startCamera();
     return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
+      if (stream) stream.getTracks().forEach(track => track.stop());
     };
   }, [facingMode, startCamera]);
 
@@ -136,7 +140,6 @@ const MobileCamera: React.FC<MobileCameraProps> = ({ role, mode: initialMode, on
 
   return (
     <div className="flex flex-col h-screen bg-black text-white relative overflow-hidden">
-      {/* Viewfinder */}
       <div className="flex-1 relative flex items-center justify-center">
         <video 
           ref={videoRef} 
@@ -146,72 +149,45 @@ const MobileCamera: React.FC<MobileCameraProps> = ({ role, mode: initialMode, on
           className="absolute min-w-full min-h-full object-cover"
         />
         
-        {/* Cam Overlay */}
-        <CamOverlay mode={currentMode} />
+        <CamOverlay mode={currentMode} label={!isConnected ? "CONNECTING..." : undefined} />
 
-        {/* Status Indicators */}
         <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full flex items-center gap-3 z-20 border border-white/10 shadow-lg">
           {isConnected ? <Wifi className="text-green-400 w-4 h-4" /> : <WifiOff className="text-red-400 w-4 h-4 animate-pulse" />}
           <div className="flex flex-col leading-none">
-            <span className="text-[10px] text-gray-400 font-mono">ROOM: {roomId}</span>
-            <span className="text-xs font-bold font-mono">{role === Role.CAM_1 ? 'CAM 1' : 'CAM 2'}</span>
+            <span className="text-[10px] text-gray-400 font-mono uppercase tracking-widest">ROOM: {roomId}</span>
+            <span className="text-xs font-bold font-mono">{role === Role.CAM_1 ? 'CAMERA 1' : 'CAMERA 2'}</span>
           </div>
         </div>
 
-        {/* Director Controls (Right Side) */}
         <div className="absolute right-4 top-24 flex flex-col gap-4 z-30">
-          <div className="text-[10px] text-center font-bold text-white/50 mb-1 uppercase tracking-wider">Director</div>
-          <button 
-            onClick={() => sendLayoutCommand('split')}
-            className={`w-14 h-14 rounded-full bg-black/40 backdrop-blur-md border border-white/20 text-white flex flex-col items-center justify-center hover:${themeColor} active:scale-95 transition shadow-xl`}
-            title="Switch Host to Split View"
-          >
-            <Layout size={20} />
-            <span className="text-[8px] font-bold mt-1">SPLIT</span>
+          <button onClick={() => sendLayoutCommand('split')} className={`w-16 h-16 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white flex flex-col items-center justify-center hover:${themeColor} active:scale-95 transition shadow-2xl`}>
+            <Layout size={24} />
+            <span className="text-[10px] font-bold mt-1">SPLIT</span>
           </button>
-          
-          <button 
-            onClick={() => sendLayoutCommand('full_cam1')}
-            className={`w-14 h-14 rounded-full bg-black/40 backdrop-blur-md border border-white/20 flex flex-col items-center justify-center hover:${themeColor} active:scale-95 transition shadow-xl ${role === Role.CAM_1 ? `ring-2 ${ringColor} bg-white/10` : ''}`}
-            title="Switch Host to Cam 1"
-          >
-            <Smartphone size={20} />
-            <span className="text-[8px] font-bold mt-1">CAM 1</span>
+          <button onClick={() => sendLayoutCommand('full_cam1')} className={`w-16 h-16 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex flex-col items-center justify-center hover:${themeColor} active:scale-95 transition shadow-2xl ${role === Role.CAM_1 ? `ring-4 ${ringColor} bg-white/20` : ''}`}>
+            <Smartphone size={24} />
+            <span className="text-[10px] font-bold mt-1 uppercase">Cam 1</span>
           </button>
-
-          <button 
-            onClick={() => sendLayoutCommand('full_cam2')}
-            className={`w-14 h-14 rounded-full bg-black/40 backdrop-blur-md border border-white/20 flex flex-col items-center justify-center hover:${themeColor} active:scale-95 transition shadow-xl ${role === Role.CAM_2 ? `ring-2 ${ringColor} bg-white/10` : ''}`}
-            title="Switch Host to Cam 2"
-          >
-            <Smartphone size={20} />
-            <span className="text-[8px] font-bold mt-1">CAM 2</span>
+          <button onClick={() => sendLayoutCommand('full_cam2')} className={`w-16 h-16 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex flex-col items-center justify-center hover:${themeColor} active:scale-95 transition shadow-2xl ${role === Role.CAM_2 ? `ring-4 ${ringColor} bg-white/20` : ''}`}>
+            <Smartphone size={24} />
+            <span className="text-[10px] font-bold mt-1 uppercase">Cam 2</span>
           </button>
         </div>
       </div>
 
-      {/* Footer Controls */}
-      <div className="bg-gradient-to-t from-black via-black/80 to-transparent pt-12 pb-8 px-8 flex justify-between items-end z-30">
-        <button 
-          onClick={onLeave}
-          className="w-12 h-12 rounded-full bg-gray-800/80 backdrop-blur hover:bg-red-900/80 flex items-center justify-center transition text-white border border-white/10"
-        >
-          <LogOut size={20} />
+      <div className="bg-gradient-to-t from-black via-black/80 to-transparent pt-12 pb-10 px-8 flex justify-between items-end z-30">
+        <button onClick={onLeave} className="w-16 h-16 rounded-full bg-red-600/20 backdrop-blur hover:bg-red-600 flex items-center justify-center transition text-white border border-white/20 shadow-xl">
+          <LogOut size={28} />
         </button>
 
-        {/* Rec Button (Visual Only for operator) */}
-        <div className="relative group">
-           <div className={`w-20 h-20 rounded-full border-4 flex items-center justify-center transition ${isConnected ? 'border-white' : 'border-gray-600'}`}>
-             <div className={`w-16 h-16 rounded-full transition-all duration-500 ${isConnected ? 'bg-red-500 scale-100 animate-pulse' : 'bg-gray-500 scale-90'}`} />
+        <div className="relative">
+           <div className={`w-24 h-24 rounded-full border-4 flex items-center justify-center transition-all ${isConnected ? 'border-white animate-pulse' : 'border-gray-700'}`}>
+             <div className={`w-20 h-20 rounded-full transition-all duration-500 ${isConnected ? 'bg-red-600 scale-100' : 'bg-gray-800 scale-90'}`} />
            </div>
-           {!isConnected && <span className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs bg-red-600 text-white px-2 py-1 rounded">Connecting...</span>}
         </div>
 
-        <button 
-          onClick={toggleCamera}
-          className="w-12 h-12 rounded-full bg-gray-800/80 backdrop-blur hover:bg-gray-700/80 flex items-center justify-center transition text-white border border-white/10"
-        >
-          <RefreshCw size={20} />
+        <button onClick={toggleCamera} className="w-16 h-16 rounded-full bg-white/10 backdrop-blur hover:bg-white/20 flex items-center justify-center transition text-white border border-white/20 shadow-xl">
+          <RefreshCw size={28} />
         </button>
       </div>
     </div>
