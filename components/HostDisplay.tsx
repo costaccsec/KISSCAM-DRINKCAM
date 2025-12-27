@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Grid, Sparkles, Monitor, Maximize, Minimize } from 'lucide-react';
-import { GeminiCommentary, LayoutMode, AppMode, Language } from '../types';
+import { Grid, Sparkles, AlertCircle, Wifi, Monitor } from 'lucide-react';
+import { Role, GeminiCommentary, LayoutMode, AppMode, Language } from '../types';
 import CamOverlay from './HeartOverlay';
 import { analyzeFrame } from '../services/geminiService';
 import Peer, { MediaConnection, DataConnection } from 'peerjs';
@@ -19,13 +19,11 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [commentary, setCommentary] = useState<GeminiCommentary | null>(null);
   const [language, setLanguage] = useState<Language>('TH');
-  const [isFullscreen, setIsFullscreen] = useState(false);
   
   const peerRef = useRef<Peer | null>(null);
   const cam1VideoRef = useRef<HTMLVideoElement>(null);
   const cam2VideoRef = useRef<HTMLVideoElement>(null);
   const connectionsRef = useRef<DataConnection[]>([]);
-  const fullScreenContainerRef = useRef<HTMLDivElement>(null);
   const modeRef = useRef(mode);
 
   useEffect(() => {
@@ -34,26 +32,6 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
         if (conn.open) conn.send({ type: 'STATUS', mode });
     });
   }, [mode]);
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
-
-  const toggleFullscreen = () => {
-    if (!fullScreenContainerRef.current) return;
-
-    if (!document.fullscreenElement) {
-      fullScreenContainerRef.current.requestFullscreen().catch(err => {
-        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
-      });
-    } else {
-      document.exitFullscreen();
-    }
-  };
 
   useEffect(() => {
     const hostId = `lovelens-${roomId}-host`;
@@ -68,6 +46,7 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
       console.log("Incoming call from:", call.peer);
       call.answer(); 
 
+      // Support IDs with random suffixes
       const isCam1 = call.peer.includes('cam1');
       const isCam2 = call.peer.includes('cam2');
 
@@ -88,6 +67,7 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
     });
 
     peer.on('connection', (conn: DataConnection) => {
+      console.log("New data connection from:", conn.peer);
       connectionsRef.current.push(conn);
       
       conn.on('open', () => {
@@ -178,44 +158,40 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
       <video ref={cam1VideoRef} autoPlay playsInline muted className="hidden" />
       <video ref={cam2VideoRef} autoPlay playsInline muted className="hidden" />
 
-      {/* Header UI (Only visible when not fullscreen) */}
-      {!isFullscreen && (
-        <div className="h-24 bg-gray-900/80 backdrop-blur-xl border-b-4 border-white/10 flex items-center justify-between px-10 z-40 shrink-0">
-          <div className="flex items-center gap-8">
-            <div className="bg-white text-black px-6 py-2 rounded-2xl font-black text-3xl font-mono tracking-widest shadow-xl">
-              {roomId}
-            </div>
-            <h1 className={`${isKiss ? 'text-pink-500' : 'text-amber-500'} font-black text-4xl tracking-tighter italic uppercase`}>
-              {isKiss ? "LOVELENS" : "DRINKLENS"}
-            </h1>
+      <div className="h-24 bg-gray-900/80 backdrop-blur-xl border-b-4 border-white/10 flex items-center justify-between px-10 z-40 shrink-0">
+        <div className="flex items-center gap-8">
+          <div className="bg-white text-black px-6 py-2 rounded-2xl font-black text-3xl font-mono tracking-widest shadow-xl">
+            {roomId}
           </div>
-          
-          <div className="flex items-center gap-4">
-            <button onClick={() => setActiveLayout('split')} className={`p-4 rounded-2xl transition ${activeLayout === 'split' ? 'bg-white text-black scale-110 shadow-2xl' : 'text-white/40'}`}><Grid size={32} /></button>
-            <button onClick={() => setActiveLayout('full_cam1')} className={`px-6 py-3 rounded-2xl font-black transition ${activeLayout === 'full_cam1' ? 'bg-white text-black scale-110 shadow-2xl' : 'text-white/40'}`}>CAM 1</button>
-            <button onClick={() => setActiveLayout('full_cam2')} className={`px-6 py-3 rounded-2xl font-black transition ${activeLayout === 'full_cam2' ? 'bg-white text-black scale-110 shadow-2xl' : 'text-white/40'}`}>CAM 2</button>
-          </div>
-
-          <div className="flex gap-6 items-center">
-             <div className="flex items-center bg-white/10 rounded-full p-1.5 border border-white/20">
-               <button onClick={() => setLanguage('TH')} className={`px-5 py-2 rounded-full text-lg font-black transition-all ${language === 'TH' ? 'bg-white text-black' : 'text-white/50'}`}>TH</button>
-               <button onClick={() => setLanguage('EN')} className={`px-5 py-2 rounded-full text-lg font-black transition-all ${language === 'EN' ? 'bg-white text-black' : 'text-white/50'}`}>EN</button>
-             </div>
-             <button
-               onClick={handleAIReaction}
-               disabled={isAnalyzing || (!cam1Stream && !cam2Stream)}
-               className={`bg-white text-black disabled:opacity-50 px-8 py-4 rounded-2xl font-black text-xl flex items-center gap-3 transition-all transform active:scale-95 shadow-2xl`}
-             >
-               <Sparkles size={24} className="fill-current" />
-               {isAnalyzing ? "JUDGING..." : "AI JUDGE"}
-             </button>
-             <button onClick={onLeave} className="text-white/30 hover:text-white font-black text-sm uppercase">Exit</button>
-          </div>
+          <h1 className={`${isKiss ? 'text-pink-500' : 'text-amber-500'} font-black text-4xl tracking-tighter italic uppercase`}>
+            {isKiss ? "LOVELENS" : "DRINKLENS"}
+          </h1>
         </div>
-      )}
+        
+        <div className="flex items-center gap-4">
+          <button onClick={() => setActiveLayout('split')} className={`p-4 rounded-2xl transition ${activeLayout === 'split' ? 'bg-white text-black scale-110 shadow-2xl' : 'text-white/40'}`}><Grid size={32} /></button>
+          <button onClick={() => setActiveLayout('full_cam1')} className={`px-6 py-3 rounded-2xl font-black transition ${activeLayout === 'full_cam1' ? 'bg-white text-black scale-110 shadow-2xl' : 'text-white/40'}`}>CAM 1</button>
+          <button onClick={() => setActiveLayout('full_cam2')} className={`px-6 py-3 rounded-2xl font-black transition ${activeLayout === 'full_cam2' ? 'bg-white text-black scale-110 shadow-2xl' : 'text-white/40'}`}>CAM 2</button>
+        </div>
 
-      {/* Main Container */}
-      <div className={`flex-1 relative bg-gray-950 ${isFullscreen ? 'p-0' : 'p-6'} flex items-center justify-center overflow-hidden`}>
+        <div className="flex gap-6 items-center">
+           <div className="flex items-center bg-white/10 rounded-full p-1.5 border border-white/20">
+             <button onClick={() => setLanguage('TH')} className={`px-5 py-2 rounded-full text-lg font-black transition-all ${language === 'TH' ? 'bg-white text-black' : 'text-white/50'}`}>TH</button>
+             <button onClick={() => setLanguage('EN')} className={`px-5 py-2 rounded-full text-lg font-black transition-all ${language === 'EN' ? 'bg-white text-black' : 'text-white/50'}`}>EN</button>
+           </div>
+           <button
+             onClick={handleAIReaction}
+             disabled={isAnalyzing || (!cam1Stream && !cam2Stream)}
+             className={`bg-white text-black disabled:opacity-50 px-8 py-4 rounded-2xl font-black text-xl flex items-center gap-3 transition-all transform active:scale-95 shadow-2xl`}
+           >
+             <Sparkles size={24} className="fill-current" />
+             {isAnalyzing ? "JUDGING..." : "AI JUDGE"}
+           </button>
+           <button onClick={onLeave} className="text-white/30 hover:text-white font-black text-sm uppercase">Exit</button>
+        </div>
+      </div>
+
+      <div className="flex-1 relative bg-gray-950 p-6 flex items-center justify-center overflow-hidden">
          <CommentaryBox />
          
          {activeLayout === 'split' && (
@@ -232,26 +208,13 @@ const HostDisplay: React.FC<HostDisplayProps> = ({ onLeave, mode, roomId }) => {
          )}
 
          {activeLayout.startsWith('full') && (
-            <div 
-              ref={fullScreenContainerRef}
-              className={`relative aspect-video w-full max-h-full ${isFullscreen ? 'rounded-none border-none shadow-none' : `rounded-[4rem] border-[15px] ${borderColor} shadow-2xl`}`} 
-              style={{boxShadow: isFullscreen ? 'none' : `0 0 100px ${glowColor}`}}
-            >
+            <div className={`relative aspect-video w-full max-h-full rounded-[4rem] overflow-hidden bg-gray-900 border-[15px] ${borderColor} shadow-2xl`} style={{boxShadow: `0 0 100px ${glowColor}`}}>
                {activeLayout === 'full_cam1' ? (
                  cam1Stream ? <VideoFeed stream={cam1Stream} /> : <WaitingState label="CONNECTING TO CAM 1..." />
                ) : (
                  cam2Stream ? <VideoFeed stream={cam2Stream} /> : <WaitingState label="CONNECTING TO CAM 2..." />
                )}
                <CamOverlay mode={mode} label={activeLayout === 'full_cam1' ? "LIVE: CAM 1" : "LIVE: CAM 2"} />
-               
-               {/* Fullscreen Toggle Button */}
-               <button 
-                  onClick={toggleFullscreen}
-                  className="absolute top-8 right-8 z-50 p-4 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 rounded-2xl text-white transition-all active:scale-90"
-                  title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-               >
-                 {isFullscreen ? <Minimize size={32} /> : <Maximize size={32} />}
-               </button>
             </div>
          )}
       </div>
