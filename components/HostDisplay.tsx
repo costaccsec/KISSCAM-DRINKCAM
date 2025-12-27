@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Grid, Sparkles, Wifi, Monitor, Maximize, Minimize } from 'lucide-react';
-import { Role, GeminiCommentary, LayoutMode, AppMode, Language } from '../types';
+import { Grid, Sparkles, Monitor, Maximize, Minimize } from 'lucide-react';
+import { GeminiCommentary, LayoutMode, AppMode, Language } from '../types';
 import CamOverlay from './HeartOverlay';
 import { analyzeFrame } from '../services/geminiService';
 import Peer, { MediaConnection, DataConnection } from 'peerjs';
